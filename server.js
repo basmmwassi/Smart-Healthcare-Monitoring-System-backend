@@ -5,18 +5,27 @@ const cors = require('cors');
 
 const app = express();
 
-app.use(express.json());
+const allowedOrigins = [
+  'https://smarthealthcare.netlify.app',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500'
+];
 
-app.use(cors({
-  origin: [
-    'https://smarthealthcare.netlify.app',
-    'http://localhost:5500',
-    'http://127.0.0.1:5500'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('/*', cors(corsOptions));
+
+app.use(express.json());
 
 app.get('/ping', (req, res) => {
   res.json({ ok: true });
@@ -24,15 +33,8 @@ app.get('/ping', (req, res) => {
 
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Missing email or password' });
-  }
-
-  res.json({
-    message: 'Login success',
-    user: { email }
-  });
+  if (!email || !password) return res.status(400).json({ message: 'Missing email or password' });
+  res.json({ message: 'Login success', user: { email } });
 });
 
 app.get('/', (req, res) => {

@@ -6,7 +6,6 @@ const cors = require('cors');
 
 const app = express();
 
-/** ✅ CORS (واحد فقط، واضح) */
 const corsOptions = {
   origin: 'https://smarthealthcare.netlify.app',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -14,10 +13,15 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // مهم للـ preflight
+
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+
 app.use(express.json());
 
-/** ✅ Routes */
 app.get('/', (req, res) => {
   res.send('Smart Healthcare Backend is running');
 });
@@ -26,7 +30,6 @@ app.get('/ping', (req, res) => {
   res.json({ ok: true });
 });
 
-/** ✅ Start once */
 const PORT = process.env.PORT || 5000;
 
 mongoose

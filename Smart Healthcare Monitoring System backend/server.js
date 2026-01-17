@@ -22,6 +22,9 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization']
 };
 
+app.use(cors());
+app.options('*', cors()); 
+
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', 'https://smarthealthcare.netlify.app');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
@@ -32,9 +35,6 @@ app.use((req, res, next) => {
   next();
 });
 
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); 
 app.use(express.json());
 
 app.get('/', (req, res) => {

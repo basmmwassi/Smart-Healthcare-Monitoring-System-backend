@@ -112,6 +112,14 @@ const alertSchema = new mongoose.Schema(
     patientId: { type: String, required: true, index: true },
     severity: { type: String, required: true, index: true },
     message: { type: String, default: '' },
+
+    vitals: {
+      heartRate: { type: Number, default: null },
+      spo2: { type: Number, default: null },
+      temperature: { type: Number, default: null },
+      fallDetected: { type: Boolean, default: null }
+    },
+
     timestamp: { type: Date, required: true, index: true }
   },
   { timestamps: true }
@@ -280,11 +288,20 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
     const isAlert = alertActive || finalSeverity === 'WARNING' || finalSeverity === 'CRITICAL' || Boolean(message)
     if (isAlert) {
       await Alert.create({
-        patientId,
-        severity: finalSeverity === 'NORMAL' && alertActive ? 'CRITICAL' : finalSeverity,
-        message: message || 'Alert',
-        timestamp
-      })
+  patientId,
+  severity: finalSeverity === 'NORMAL' && alertActive ? 'CRITICAL' : finalSeverity,
+  message: message || 'Alert',
+
+  vitals: {
+    heartRate: vitals.heartRate ?? null,
+    spo2: vitals.spo2 ?? null,
+    temperature: vitals.temperature ?? null,
+    fallDetected: vitals.fallDetected ?? null
+  },
+
+  timestamp
+})
+
     }
 
     res.json({ ok: true })

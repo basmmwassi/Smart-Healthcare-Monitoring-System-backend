@@ -16,10 +16,9 @@ app.use((req, res, next) => {
   const origin = req.headers.origin
   res.setHeader('Vary', 'Origin')
 
-if (origin && allowedOrigins.has(origin)) {
-  res.setHeader('Access-Control-Allow-Origin', origin)
-}
-
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  }
 
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')

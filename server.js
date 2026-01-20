@@ -344,23 +344,51 @@ app.get('/api/patients/:patientId/history', auth, async (req, res) => {
   try {
     const patientId = String(req.params.patientId || '').trim()
     const limit = Math.min(Math.max(parseInt(req.query.limit || '200', 10), 1), 2000)
-    const history = await ReadingHistory.find({ patientId }).sort({ timestamp: -1 }).limit(limit).lean()
+
+    const from = req.query.from ? new Date(req.query.from) : null
+    const to = req.query.to ? new Date(req.query.to) : null
+
+    const q = { patientId }
+
+    if (from || to) {
+      q.timestamp = {}
+      if (from && !Number.isNaN(from.getTime())) q.timestamp.$gte = from
+      if (to && !Number.isNaN(to.getTime())) q.timestamp.$lte = to
+      if (Object.keys(q.timestamp).length === 0) delete q.timestamp
+    }
+
+    const history = await ReadingHistory.find(q).sort({ timestamp: -1 }).limit(limit).lean()
     res.json({ history })
   } catch {
     res.status(500).json({ message: 'Server error' })
   }
 })
 
+
 app.get('/api/patients/:patientId/alerts', auth, async (req, res) => {
   try {
     const patientId = String(req.params.patientId || '').trim()
     const limit = Math.min(Math.max(parseInt(req.query.limit || '50', 10), 1), 2000)
-    const alerts = await Alert.find({ patientId }).sort({ timestamp: -1 }).limit(limit).lean()
+
+    const from = req.query.from ? new Date(req.query.from) : null
+    const to = req.query.to ? new Date(req.query.to) : null
+
+    const q = { patientId }
+
+    if (from || to) {
+      q.timestamp = {}
+      if (from && !Number.isNaN(from.getTime())) q.timestamp.$gte = from
+      if (to && !Number.isNaN(to.getTime())) q.timestamp.$lte = to
+      if (Object.keys(q.timestamp).length === 0) delete q.timestamp
+    }
+
+    const alerts = await Alert.find(q).sort({ timestamp: -1 }).limit(limit).lean()
     res.json({ alerts })
   } catch {
     res.status(500).json({ message: 'Server error' })
   }
 })
+
 
 
 

@@ -16,9 +16,10 @@ app.use((req, res, next) => {
   const origin = req.headers.origin
   res.setHeader('Vary', 'Origin')
 
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
-  }
+if (origin && allowedOrigins.has(origin)) {
+  res.setHeader('Access-Control-Allow-Origin', origin)
+}
+
 
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
@@ -39,6 +40,102 @@ const userSchema = new mongoose.Schema(
 )
 
 const User = mongoose.model('User', userSchema)
+
+
+
+
+
+
+
+
+
+const patientSchema = new mongoose.Schema(
+  {
+    patientId: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true },
+    deviceId: { type: String, default: null }
+  },
+  { timestamps: true }
+)
+
+const Patient = mongoose.model('Patient', patientSchema)
+
+const latestReadingSchema = new mongoose.Schema(
+  {
+    patientId: { type: String, required: true, unique: true, index: true },
+    patientName: { type: String, required: true },
+
+    vitals: {
+      heartRate: { type: Number, default: null },
+      spo2: { type: Number, default: null },
+      temperature: { type: Number, default: null },
+      fallDetected: { type: Boolean, default: null }
+    },
+
+    severityReport: {
+      heartRate: { type: String, default: 'INFO' },
+      spo2: { type: String, default: 'INFO' },
+      temperature: { type: String, default: 'INFO' },
+      fallMotion: { type: String, default: 'INFO' }
+    },
+
+    finalSeverity: { type: String, default: 'NORMAL', index: true },
+    alertActive: { type: Boolean, default: false, index: true },
+    message: { type: String, default: '' },
+    timestamp: { type: Date, required: true, index: true }
+  },
+  { timestamps: true }
+)
+
+const LatestReading = mongoose.model('LatestReading', latestReadingSchema)
+
+const readingHistorySchema = new mongoose.Schema(
+  {
+    patientId: { type: String, required: true, index: true },
+    vitals: {
+      heartRate: { type: Number, default: null },
+      spo2: { type: Number, default: null },
+      temperature: { type: Number, default: null },
+      fallDetected: { type: Boolean, default: null }
+    },
+    finalSeverity: { type: String, default: 'NORMAL', index: true },
+    timestamp: { type: Date, required: true, index: true }
+  },
+  { timestamps: true }
+)
+
+readingHistorySchema.index({ patientId: 1, timestamp: -1 })
+
+const ReadingHistory = mongoose.model('ReadingHistory', readingHistorySchema)
+
+const alertSchema = new mongoose.Schema(
+  {
+    patientId: { type: String, required: true, index: true },
+    severity: { type: String, required: true, index: true },
+    message: { type: String, default: '' },
+    timestamp: { type: Date, required: true, index: true }
+  },
+  { timestamps: true }
+)
+
+alertSchema.index({ patientId: 1, timestamp: -1 })
+
+const Alert = mongoose.model('Alert', alertSchema)
+
+function normalizeSeverity(s) {
+  const x = String(s || '').toUpperCase()
+  if (x === 'CRITICAL' || x === 'WARNING' || x === 'INFO' || x === 'NORMAL') return x
+  return 'INFO'
+}
+
+function ingestAuth(req, res, next) {
+  const expected = process.env.INGEST_API_KEY
+  if (!expected) return next()
+  const got = req.headers['x-api-key']
+  if (!got || String(got) !== String(expected)) return res.status(401).json({ message: 'Unauthorized' })
+  next()
+}
+
 
 function signToken(userId) {
   const secret = process.env.JWT_SECRET
@@ -109,6 +206,148 @@ app.get('/api/auth/me', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error' })
   }
 })
+
+
+
+
+
+app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
+  try {
+    const body = req.body || {}
+
+    const patientId = String(body.patientId || '').trim()
+    const patientName = String(body.patientName || body.name || '').trim()
+
+    if (!patientId || !patientName) {
+      return res.status(400).json({ message: 'Missing patientId or patientName' })
+    }
+
+    const vitals = body.vitals || {}
+    const severityReport = body.severityReport || {}
+
+    const timestampRaw = body.timestamp
+    const timestamp = timestampRaw ? new Date(timestampRaw) : new Date()
+    if (Number.isNaN(timestamp.getTime())) return res.status(400).json({ message: 'Invalid timestamp' })
+
+    const finalSeverity = normalizeSeverity(body.finalSeverity || 'NORMAL')
+    const alertActive = Boolean(body.alertActive)
+    const message = String(body.message || '')
+
+    await Patient.updateOne(
+      { patientId },
+      { $setOnInsert: { patientId, name: patientName } },
+      { upsert: true }
+    )
+
+    await LatestReading.updateOne(
+      { patientId },
+      {
+        $set: {
+          patientId,
+          patientName,
+          vitals: {
+            heartRate: vitals.heartRate ?? null,
+            spo2: vitals.spo2 ?? null,
+            temperature: vitals.temperature ?? null,
+            fallDetected: vitals.fallDetected ?? null
+          },
+          severityReport: {
+            heartRate: normalizeSeverity(severityReport.heartRate),
+            spo2: normalizeSeverity(severityReport.spo2),
+            temperature: normalizeSeverity(severityReport.temperature),
+            fallMotion: normalizeSeverity(severityReport.fallMotion)
+          },
+          finalSeverity,
+          alertActive,
+          message,
+          timestamp
+        }
+      },
+      { upsert: true }
+    )
+
+    await ReadingHistory.create({
+      patientId,
+      vitals: {
+        heartRate: vitals.heartRate ?? null,
+        spo2: vitals.spo2 ?? null,
+        temperature: vitals.temperature ?? null,
+        fallDetected: vitals.fallDetected ?? null
+      },
+      finalSeverity,
+      timestamp
+    })
+
+    const isAlert = alertActive || finalSeverity === 'WARNING' || finalSeverity === 'CRITICAL' || Boolean(message)
+    if (isAlert) {
+      await Alert.create({
+        patientId,
+        severity: finalSeverity === 'NORMAL' && alertActive ? 'CRITICAL' : finalSeverity,
+        message: message || 'Alert',
+        timestamp
+      })
+    }
+
+    res.json({ ok: true })
+  } catch {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.get('/api/dashboard/patients', auth, async (req, res) => {
+  try {
+    const onlyWarnings = String(req.query.onlyWarnings || '').toLowerCase() === 'true'
+
+    const filter = {}
+    if (onlyWarnings) {
+      filter.$or = [
+        { finalSeverity: { $in: ['WARNING', 'CRITICAL'] } },
+        { alertActive: true }
+      ]
+    }
+
+    const patients = await LatestReading.find(filter).sort({ timestamp: -1 }).lean()
+    res.json({ patients })
+  } catch {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.get('/api/patients/:patientId/latest', auth, async (req, res) => {
+  try {
+    const patientId = String(req.params.patientId || '').trim()
+    const latest = await LatestReading.findOne({ patientId }).lean()
+    if (!latest) return res.status(404).json({ message: 'Not found' })
+    res.json({ latest })
+  } catch {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.get('/api/patients/:patientId/history', auth, async (req, res) => {
+  try {
+    const patientId = String(req.params.patientId || '').trim()
+    const limit = Math.min(Math.max(parseInt(req.query.limit || '200', 10), 1), 2000)
+    const history = await ReadingHistory.find({ patientId }).sort({ timestamp: -1 }).limit(limit).lean()
+    res.json({ history })
+  } catch {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.get('/api/patients/:patientId/alerts', auth, async (req, res) => {
+  try {
+    const patientId = String(req.params.patientId || '').trim()
+    const limit = Math.min(Math.max(parseInt(req.query.limit || '50', 10), 1), 2000)
+    const alerts = await Alert.find({ patientId }).sort({ timestamp: -1 }).limit(limit).lean()
+    res.json({ alerts })
+  } catch {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+
+
 
 app.get('/', (req, res) => {
   res.send('Smart Healthcare Backend is running')

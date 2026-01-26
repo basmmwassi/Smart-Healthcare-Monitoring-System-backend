@@ -273,7 +273,13 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
     }
 
     const decision = body.decision || {}
-    const finalSeverity = normalizeSeverity(decision.final_severity ?? body.finalSeverity ?? body.final_severity ?? 'NORMAL')
+    let finalSeverity = normalizeSeverity(
+      decision.final_severity ?? body.finalSeverity ?? body.final_severity ?? 'NORMAL'
+    )
+
+    if (finalSeverity === 'INFO') {
+      finalSeverity = 'NORMAL'
+    }
     const alertActive = Boolean(decision.send_alert ?? body.alertActive ?? body.send_alert ?? false)
     const message = String(decision.reason ?? body.message ?? '').trim()
 

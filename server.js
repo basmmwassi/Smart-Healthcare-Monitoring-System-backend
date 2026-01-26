@@ -70,6 +70,11 @@ const latestReadingSchema = new mongoose.Schema(
       temperature: { type: Number, default: null },
       fallDetected: { type: Boolean, default: null }
     },
+    sensorFaults: {
+      heartRate: { type: Boolean, default: false },
+      spo2: { type: Boolean, default: false },
+      temperature: { type: Boolean, default: false }
+    },
 
     severityReport: {
       heartRate: { type: String, default: 'INFO' },
@@ -98,7 +103,13 @@ const readingHistorySchema = new mongoose.Schema(
       fallDetected: { type: Boolean, default: null }
     },
     finalSeverity: { type: String, default: 'NORMAL', index: true },
-    timestamp: { type: Date, required: true, index: true }
+    timestamp: { type: Date, required: true, index: true },
+    sensorFaults: {
+      heartRate: { type: Boolean, default: false },
+      spo2: { type: Boolean, default: false },
+      temperature: { type: Boolean, default: false }
+    }
+
   },
   { timestamps: true }
 )
@@ -118,6 +129,11 @@ const alertSchema = new mongoose.Schema(
       spo2: { type: Number, default: null },
       temperature: { type: Number, default: null },
       fallDetected: { type: Boolean, default: null }
+    },
+    sensorFaults: {
+      heartRate: { type: Boolean, default: false },
+      spo2: { type: Boolean, default: false },
+      temperature: { type: Boolean, default: false }
     },
 
     timestamp: { type: Date, required: true, index: true }
@@ -220,6 +236,16 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
   try {
     const body = req.body || {}
 
+
+
+    const sensorFaultsIn = body.sensor_faults || {}
+    const sensorFaults = {
+      heartRate: Boolean(sensorFaultsIn.heart_rate),
+      spo2: Boolean(sensorFaultsIn.spo2),
+      temperature: Boolean(sensorFaultsIn.temperature)
+    }
+
+
     const patientId = String(body.patient_id ?? body.patientId ?? '').trim()
     if (!patientId) return res.status(400).json({ message: 'Missing patient_id' })
 
@@ -272,6 +298,7 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
             temperature: vitals.temperature ?? null,
             fallDetected: vitals.fallDetected ?? null
           },
+          sensorFaults,
           severityReport: {
             heartRate: severityReport.heartRate,
             spo2: severityReport.spo2,
@@ -295,6 +322,7 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
         temperature: vitals.temperature ?? null,
         fallDetected: vitals.fallDetected ?? null
       },
+      sensorFaults,
       finalSeverity,
       timestamp
     })
@@ -311,6 +339,7 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
           temperature: vitals.temperature ?? null,
           fallDetected: vitals.fallDetected ?? null
         },
+        sensorFaults,
         timestamp
       })
     }

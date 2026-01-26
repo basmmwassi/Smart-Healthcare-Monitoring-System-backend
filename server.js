@@ -96,20 +96,24 @@ const LatestReading = mongoose.model('LatestReading', latestReadingSchema)
 const readingHistorySchema = new mongoose.Schema(
   {
     patientId: { type: String, required: true, index: true },
+
     vitals: {
       heartRate: { type: Number, default: null },
       spo2: { type: Number, default: null },
       temperature: { type: Number, default: null },
       fallDetected: { type: Boolean, default: null }
     },
-    finalSeverity: { type: String, default: 'NORMAL', index: true },
-    timestamp: { type: Date, required: true, index: true },
+
     sensorFaults: {
       heartRate: { type: Boolean, default: false },
       spo2: { type: Boolean, default: false },
       temperature: { type: Boolean, default: false }
-    }
+    },
 
+    message: { type: String, default: '' },
+
+    finalSeverity: { type: String, default: 'NORMAL', index: true },
+    timestamp: { type: Date, required: true, index: true }
   },
   { timestamps: true }
 )
@@ -324,6 +328,7 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
       },
       sensorFaults,
       finalSeverity,
+      message,
       timestamp
     })
 

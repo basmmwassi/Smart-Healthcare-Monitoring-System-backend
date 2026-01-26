@@ -216,35 +216,49 @@ app.get('/api/auth/me', auth, async (req, res) => {
 
 
 
-
-
 app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
   try {
     const body = req.body || {}
 
-    const patientId = String(body.patientId || '').trim()
-    const patientName = String(body.patientName || body.name || '').trim()
+    const patientId = String(body.patient_id ?? body.patientId ?? '').trim()
+    if (!patientId) return res.status(400).json({ message: 'Missing patient_id' })
 
-    if (!patientId || !patientName) {
-      return res.status(400).json({ message: 'Missing patientId or patientName' })
+    const patientNameRaw = String(body.patient_name ?? body.patientName ?? body.name ?? '').trim()
+    const patientName = patientNameRaw || `Patient ${patientId}`
+
+    const vitalsIn = body.vitals || {}
+    const vitals = {
+      heartRate: vitalsIn.heart_rate ?? vitalsIn.heartRate ?? null,
+      spo2: vitalsIn.spo2 ?? null,
+      temperature: vitalsIn.temperature ?? null,
+      fallDetected: vitalsIn.fall ?? vitalsIn.fallDetected ?? null
     }
 
-    const vitals = body.vitals || {}
-    const severityReport = body.severityReport || {}
+    const sevIn = body.severity || body.severityReport || {}
+    const severityReport = {
+      heartRate: normalizeSeverity(sevIn.heart_rate?.level ?? sevIn.heartRate ?? sevIn.heart_rate ?? 'NORMAL'),
+      spo2: normalizeSeverity(sevIn.spo2?.level ?? sevIn.spo2 ?? 'NORMAL'),
+      temperature: normalizeSeverity(sevIn.temperature?.level ?? sevIn.temperature ?? 'NORMAL'),
+      fallMotion: normalizeSeverity(sevIn.fall_motion?.level ?? sevIn.fallMotion ?? sevIn.fall_motion ?? 'NORMAL')
+    }
+
+    const decision = body.decision || {}
+    const finalSeverity = normalizeSeverity(decision.final_severity ?? body.finalSeverity ?? body.final_severity ?? 'NORMAL')
+    const alertActive = Boolean(decision.send_alert ?? body.alertActive ?? body.send_alert ?? false)
+    const message = String(decision.reason ?? body.message ?? '').trim()
 
     const timestampRaw = body.timestamp
     const timestamp = timestampRaw ? new Date(timestampRaw) : new Date()
     if (Number.isNaN(timestamp.getTime())) return res.status(400).json({ message: 'Invalid timestamp' })
 
-    const finalSeverity = normalizeSeverity(body.finalSeverity || 'NORMAL')
-    const alertActive = Boolean(body.alertActive)
-    const message = String(body.message || '')
+    const deviceId = String(body.device_id ?? body.deviceId ?? '').trim() || null
 
     await Patient.updateOne(
       { patientId },
-      { $setOnInsert: { patientId, name: patientName } },
+      { $set: { name: patientName, deviceId }, $setOnInsert: { patientId } },
       { upsert: true }
     )
+
 
     await LatestReading.updateOne(
       { patientId },
@@ -259,10 +273,10 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
             fallDetected: vitals.fallDetected ?? null
           },
           severityReport: {
-            heartRate: normalizeSeverity(severityReport.heartRate),
-            spo2: normalizeSeverity(severityReport.spo2),
-            temperature: normalizeSeverity(severityReport.temperature),
-            fallMotion: normalizeSeverity(severityReport.fallMotion)
+            heartRate: severityReport.heartRate,
+            spo2: severityReport.spo2,
+            temperature: severityReport.temperature,
+            fallMotion: severityReport.fallMotion
           },
           finalSeverity,
           alertActive,
@@ -288,20 +302,17 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
     const isAlert = alertActive || finalSeverity === 'WARNING' || finalSeverity === 'CRITICAL' || Boolean(message)
     if (isAlert) {
       await Alert.create({
-  patientId,
-  severity: finalSeverity === 'NORMAL' && alertActive ? 'CRITICAL' : finalSeverity,
-  message: message || 'Alert',
-
-  vitals: {
-    heartRate: vitals.heartRate ?? null,
-    spo2: vitals.spo2 ?? null,
-    temperature: vitals.temperature ?? null,
-    fallDetected: vitals.fallDetected ?? null
-  },
-
-  timestamp
-})
-
+        patientId,
+        severity: finalSeverity === 'NORMAL' && alertActive ? 'CRITICAL' : finalSeverity,
+        message: message || 'Alert',
+        vitals: {
+          heartRate: vitals.heartRate ?? null,
+          spo2: vitals.spo2 ?? null,
+          temperature: vitals.temperature ?? null,
+          fallDetected: vitals.fallDetected ?? null
+        },
+        timestamp
+      })
     }
 
     res.json({ ok: true })
@@ -309,6 +320,8 @@ app.post('/api/ingest/readings', ingestAuth, async (req, res) => {
     res.status(500).json({ message: 'Server error' })
   }
 })
+
+
 
 app.get('/api/dashboard/patients', auth, async (req, res) => {
   try {
